@@ -58,21 +58,26 @@ took three passes at the problem, each adding more structure:
    and in/out-degree centrality, then feeds these alongside raw transaction
    features into a gradient-boosted tree classifier. This tests how far you
    get by *summarizing* graph structure into tabular features, without a
-   model that learns over the graph directly.
+   model that learns over the graph directly. Trained on the majority class
+   undersampled 10:1.
 
-2. **FraudGT — Graph Transformer**
+2. **FraudGT — Graph Transformer** ([Lin et al., 2024](#-references))
    (`notebooks/Deep_Learning_Project_FraudGT_Final.ipynb`): a transformer
    -style attention mechanism operating over the transaction graph, letting
    each node attend to relevant neighbors rather than aggregating them
-   uniformly. Trained with a custom loss and evaluated with a decision
-   threshold tuned on validation F1.
+   uniformly. Trained on the full, non-undersampled graph and handled the
+   class imbalance instead with a **focal loss** (`alpha=0.25, gamma=2.0`),
+   with a decision threshold tuned on validation F1. An ablation tested the
+   effect of the model's sigmoid attention gate (see Results).
 
 3. **Multi-PNA — GNN with Principal Neighbourhood Aggregation**
+   ([Corso et al., 2020](#-references); financial-fraud framing from
+   [Lin et al., 2024](#-references))
    (`notebooks/Deep_Learning_Project_MultiPNA_Final.ipynb`): combines
    multiple aggregators (mean, max, min, std) scaled by node degree, which
    is designed to capture more of a neighborhood's structure than a single
    aggregator can. To handle both the class imbalance and GPU memory limits
-   at this graph scale, we **undersampled** the majority class during
+   at this graph scale, we **undersampled the majority class 20:1** during
    training and evaluated on the untouched, fully imbalanced test set.
 
 For both GNNs, the decision threshold was tuned on a validation set (not
@@ -81,20 +86,34 @@ the minority class nearly unreachable.
 
 ## 📈 Key Results
 
-| Model | F1 | Precision | Recall | ROC-AUC | PR-AUC |
-|---|---|---|---|---|---|
-| FraudGT (Graph Transformer) | 0.315 | 0.274 | 0.240 | 0.962 | 0.149 |
-| **Multi-PNA (GNN)** | **0.557** | **0.731** | 0.449 | **0.978** | **0.481** |
+| Model | F1 | Precision | Recall | PR-AUC |
+|---|---|---|---|---|
+| XGBoost (tabular baseline) | 0.48 | 0.59 | 0.41 | 0.45 |
+| FraudGT (without sigmoid gate) | 0.26 | 0.27 | 0.24 | 0.15 |
+| FraudGT (with sigmoid gate) | 0.32 | 0.50 | 0.24 | 0.38 |
+| **Multi-PNA (GNN, best run)** | **0.56** | **0.73** | **0.45** | **0.47** |
 
-Multi-PNA was the strongest model by a wide margin on every metric except
-recall, where it traded some sensitivity for far higher precision (0.73 vs.
-0.27) — at 1000:1 imbalance, that precision gap is the difference between a
-model whose alerts are mostly false positives and one an investigator could
-plausibly act on. Its **PR-AUC of 0.48** (vs. 0.15 for FraudGT) is the more
-informative comparison of the two ROC-AUC numbers, since ROC-AUC is easily
-inflated by the overwhelming majority class in this setting.
+(Table as reported in `docs/STATS_426_Final_Report.pdf`, Section 7. ROC-AUC
+is omitted here — see **Limitations** below for why it's a misleading
+comparison metric on this dataset.) Multi-PNA was the strongest model
+overall, and both GNNs' PR-AUC beat XGBoost's tabular baseline — evidence
+that relational structure adds real signal beyond hand-engineered graph
+features. FraudGT's sigmoid attention gate turned out to matter a lot: removing
+it dropped F1 from 0.32 to 0.26, which the report attributes to the gate
+blocking signal the attention layers needed on such an imbalanced graph.
 
-**FraudGT — training curves and precision/recall tradeoff:**
+**Limitations.** The FraudGT vs. Multi-PNA comparison is **confounded by
+training regime, not just architecture**: XGBoost undersampled the majority
+class 10:1, Multi-PNA undersampled it 20:1, while FraudGT trained on the
+(much more imbalanced) full graph and instead handled imbalance via a focal
+loss (`alpha=0.25, gamma=2.0`). Since undersampling and loss reweighting push
+a model's precision/recall tradeoff in different ways, some of the PR-AUC
+gap between Multi-PNA (0.47) and FraudGT (0.38) likely reflects that
+difference in imbalance handling rather than a clean architecture-only
+effect. A fair head-to-head would hold the imbalance-handling strategy fixed
+across models and vary only the architecture.
+
+**FraudGT (without sigmoid gate) — training curves and precision/recall tradeoff:**
 
 ![FraudGT training and validation curves](assets/fraudgt_training_curves.png)
 ![FraudGT precision-recall curve](assets/fraudgt_pr_curve.png)
@@ -121,6 +140,7 @@ docs/
   STATS_426_Final_Report.pdf                Full written report
   STATS_426_Final_Presentation.pptx         Presentation slides
 assets/                                     Charts used in this README
+requirements.txt                            Python dependencies
 ```
 
 ## 🛠️ Tools Used
@@ -129,6 +149,29 @@ assets/                                     Charts used in this README
 * **Infrastructure**: Google Colab (GPU runtime)
 
 ## Setup
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 Update the hardcoded dataset path at the top of each notebook/script to
 point to your local copy of `HI-Small_Trans.csv` before running (the
 dataset itself is not committed — see [Dataset & EDA](#-dataset--eda)).
+
+## 📚 References
+- Lin, J., Guo, X., Zhu, Y., Mitchell, S., Altman, E., & Shun, J. (2024).
+  [FraudGT: A simple, effective, and efficient graph transformer for
+  financial fraud detection](https://doi.org/10.1145/3677052.3698648). In
+  *Proceedings of the 5th ACM International Conference on AI in Finance
+  (ICAIF '24)*, 292–300. — architecture implemented in `notebooks/Deep_Learning_Project_FraudGT_Final.ipynb`,
+  and source of the Multi-PNA-for-fraud framing used here.
+- Corso, G., Cavalleri, L., Beaini, D., Liò, P., & Veličković, P. (2020).
+  [Principal Neighbourhood Aggregation for Graph
+  Nets](https://arxiv.org/abs/2004.05718). *NeurIPS 2020.* — the PNA
+  aggregation scheme implemented in `notebooks/Deep_Learning_Project_MultiPNA_Final.ipynb`.
+
+## 👥 Team & Contributions
+Team project for UCLA STATS 426: Vincent Nguyen, Vinod Srinivasan, Sarthak
+Mohindru, Kasyap Bendapudi (see `docs/STATS_426_Final_Report.pdf` for full
+authorship). This repo — structure, README, and consolidation of the
+notebooks/report/presentation — was put together by Sarthak Mohindru from
+the team's original submission.
