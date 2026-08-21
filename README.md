@@ -1,4 +1,4 @@
-# GNN for Money Laundering Detection
+# Graph Neural Networks (GNN) for Money Laundering Detection
 
 ![Project Status](https://img.shields.io/badge/Status-Completed-success)
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
